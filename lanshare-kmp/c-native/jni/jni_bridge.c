@@ -8,15 +8,15 @@
     to access the native LAN-Share library.
 */
 
-#include <jni.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
-#include <stdio.h>
-#include <android/log.h>
-#include "lanshare.h"
-#include "lanshare_transfer.h"
 #include "lanshare_log.h"
+#include "lanshare_mdns.h"
+#include "lanshare_transfer.h"
+#include <android/log.h>
+#include <jni.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 /* Global references for callbacks */
 static jobject g_transfer_callback = NULL;

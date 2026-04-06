@@ -119,15 +119,11 @@ private:
     std::vector<ServiceDiscovery> discovered_services_;
     std::vector<std::string> service_instances_;
     int mdns_sock_ = -1;
-//    int service_port_ = DEFAULT_SERVICE_PORT;
-    
+
     mutable std::mutex mutex_;
     
-//    static thread_local char addrbuffer_[64];
-//    static thread_local char entrybuffer_[256];
-//    static thread_local char namebuffer_[256];
+
     static thread_local char sendbuffer_[1024];
-//    static thread_local mdns_record_txt_t txtbuffer_[128];
     static thread_local struct sockaddr_in service_address_ipv4_;
     static thread_local struct sockaddr_in6 service_address_ipv6_;
     static thread_local bool has_ipv4_;
