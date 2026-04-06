@@ -20,6 +20,9 @@
 
 /* Global references for callbacks */
 static jobject g_transfer_callback = NULL;
+static JavaVM* g_vm = NULL;
+static jobject g_device_callback = NULL;
+static jmethodID g_device_callback_method = NULL;
 
 
 /* Android log level mapping */
@@ -57,16 +60,82 @@ static const char* jstring_to_cstring(JNIEnv* env, jstring str)
 }
 
 
-/* Device info pointer for callbacks */
-static lanshare_device_t g_discovered_device;
 
-/* mDNS device callback */
+/* mDNS device callback - called from native thread */
 static void mdns_device_callback(const lanshare_device_t* device, void* user_data)
 {
-    memcpy(&g_discovered_device, device, sizeof(lanshare_device_t));
+    (void)user_data;
     
-    /* TODO: Implement Java callback through JNI */
-    /* This would require getting JNIEnv from native thread */
+    if (!g_vm || !g_device_callback || !g_device_callback_method) {
+        LOGW("JNI", "Device callback not registered");
+        return;
+    }
+    
+    /* Get JNIEnv from native thread */
+    JNIEnv* env;
+    jint get_env_result = (*g_vm)->GetEnv(g_vm, (void**)&env, JNI_VERSION_1_6);
+    int need_detach = 0;
+    
+    /* If not attached, attach this thread to JVM */
+    if (get_env_result == JNI_EDETACHED) {
+        jint attach_result = (*g_vm)->AttachCurrentThread(g_vm, &env, NULL);
+        if (attach_result != JNI_OK) {
+            LOGE("JNI", "Failed to attach thread to JVM");
+            return;
+        }
+        need_detach = 1;
+    } else if (get_env_result != JNI_OK) {
+        LOGE("JNI", "Failed to get JNIEnv");
+        return;
+    }
+    
+    /* Create Device object */
+    jclass device_class = (*env)->FindClass(env, "com/lnan/lanshare/model/Device");
+    if (!device_class) {
+        LOGE("JNI", "Failed to find Device class");
+        if (need_detach) {
+            (*g_vm)->DetachCurrentThread(g_vm);
+        }
+        return;
+    }
+    
+    /* Get Device constructor: Device(String, String, String, String) */
+    jmethodID device_ctor = (*env)->GetMethodID(env, device_class, "<init>", 
+                                                "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
+    if (!device_ctor) {
+        LOGE("JNI", "Failed to get Device constructor");
+        (*env)->DeleteLocalRef(env, device_class);
+        if (need_detach) {
+            (*g_vm)->DetachCurrentThread(g_vm);
+        }
+        return;
+    }
+    
+    /* Create Java strings from C strings */
+    jstring j_id = (*env)->NewStringUTF(env, device->id);
+    jstring j_name = (*env)->NewStringUTF(env, device->name);
+    jstring j_os = (*env)->NewStringUTF(env, device->os_name);
+    jstring j_ip = (*env)->NewStringUTF(env, device->ip_address);
+    
+    /* Create Device object */
+    jobject j_device = (*env)->NewObject(env, device_class, device_ctor, 
+                                         j_id, j_name, j_os, j_ip);
+    
+    /* Call the callback method */
+    (*env)->CallVoidMethod(env, g_device_callback, g_device_callback_method, j_device);
+    
+    /* Clean up local references */
+    if (j_id) (*env)->DeleteLocalRef(env, j_id);
+    if (j_name) (*env)->DeleteLocalRef(env, j_name);
+    if (j_os) (*env)->DeleteLocalRef(env, j_os);
+    if (j_ip) (*env)->DeleteLocalRef(env, j_ip);
+    if (j_device) (*env)->DeleteLocalRef(env, j_device);
+    if (device_class) (*env)->DeleteLocalRef(env, device_class);
+    
+    /* Detach thread only if we attached it */
+    if (need_detach) {
+        (*g_vm)->DetachCurrentThread(g_vm);
+    }
 }
 
 
@@ -74,7 +143,8 @@ static void mdns_device_callback(const lanshare_device_t* device, void* user_dat
 /* Library initialization */
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved)
 {
-    /* Initialize library */
+    /* Store JavaVM globally */
+    g_vm = vm;
     
     /* Initialize Android logging to redirect native logs to logcat */
     init_android_logging();
@@ -87,13 +157,21 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* reserved)
 {
     /* Cleanup library */
 
-    
-    /* Delete global references */
-    if (g_transfer_callback != NULL) {
-       JNIEnv* env;
-        (*vm)->GetEnv(vm,(void**)&env, JNI_VERSION_1_6);
-        (*env)->DeleteGlobalRef(env, g_transfer_callback);
+    JNIEnv* env;
+    if ((*vm)->GetEnv(vm, (void**)&env, JNI_VERSION_1_6) == JNI_OK) {
+        /* Delete global references */
+        if (g_transfer_callback != NULL) {
+            (*env)->DeleteGlobalRef(env, g_transfer_callback);
+            g_transfer_callback = NULL;
+        }
+        if (g_device_callback != NULL) {
+            (*env)->DeleteGlobalRef(env, g_device_callback);
+            g_device_callback = NULL;
+            g_device_callback_method = NULL;
+        }
     }
+    
+    g_vm = NULL;
 }
 
 /* =========================================
@@ -410,4 +488,44 @@ JNIEXPORT jstring JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_getDiscovered
     }
     
     return (*env)->NewStringUTF(env, json);
+}
+
+/* JNI function: registerDeviceCallback */
+JNIEXPORT void JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_registerDeviceCallback
+  (JNIEnv* env, jclass clazz, jobject callback)
+{
+    /* Delete old callback if exists */
+    if (g_device_callback != NULL) {
+        (*env)->DeleteGlobalRef(env, g_device_callback);
+        g_device_callback = NULL;
+    }
+    
+    if (callback != NULL) {
+        /* Create global reference */
+        g_device_callback = (*env)->NewGlobalRef(env, callback);
+        
+        /* Get callback method */
+        jclass callback_class = (*env)->GetObjectClass(env, callback);
+        g_device_callback_method = (*env)->GetMethodID(env, callback_class, 
+                                                       "onDeviceFound", 
+                                                       "(Lcom/lnan/lanshare/model/Device;)V");
+        (*env)->DeleteLocalRef(env, callback_class);
+        
+        LOGI("JNI", "Device callback registered successfully");
+    } else {
+        g_device_callback_method = NULL;
+        LOGI("JNI", "Device callback unregistered");
+    }
+}
+
+/* JNI function: unregisterDeviceCallback */
+JNIEXPORT void JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_unregisterDeviceCallback
+  (JNIEnv* env, jclass clazz)
+{
+    if (g_device_callback != NULL) {
+        (*env)->DeleteGlobalRef(env, g_device_callback);
+        g_device_callback = NULL;
+        g_device_callback_method = NULL;
+    }
+    LOGI("JNI", "Device callback unregistered");
 }

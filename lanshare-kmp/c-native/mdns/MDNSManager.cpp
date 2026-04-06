@@ -242,6 +242,12 @@ void MDNSManager::checkAndAddDevice(ServiceDiscovery* svc) {
         LOGI("MDNSManager", "Discovered device: %s at %s:%d", device.name, ip_str, svc->port);
         
         devices_.push_back(device);
+        
+        // Notify via callback if registered
+        if (device_callback_) {
+            LOGI("MDNSManager", "Calling device callback for %s", device.name);
+            device_callback_(&device, device_callback_user_data_);
+        }
     }
 }
 
@@ -852,11 +858,18 @@ int MDNSManager::queryService(const std::string& service_name,
     return 0;
 }
 
-int MDNSManager::startDiscoverer(lanshare_device_callback_t callback, void* user_data) {
-    (void)callback;
-    (void)user_data;
-
+void MDNSManager::setDeviceCallback(lanshare_device_callback_t callback, void* user_data) {
     std::lock_guard<std::mutex> lock(mutex_);
+    device_callback_ = callback;
+    device_callback_user_data_ = user_data;
+}
+
+int MDNSManager::startDiscoverer(lanshare_device_callback_t callback, void* user_data) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    // Save the callback for device discovery notifications
+    device_callback_ = callback;
+    device_callback_user_data_ = user_data;
     
     devices_.clear();
     discovered_services_.clear();

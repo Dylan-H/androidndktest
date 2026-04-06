@@ -72,6 +72,7 @@ public:
     MDNSManager& operator=(MDNSManager&&) = default;
     
     int startDiscoverer(lanshare_device_callback_t callback, void* user_data);
+    void setDeviceCallback(lanshare_device_callback_t callback, void* user_data);
     void stopDiscoverer();
     
     int startBroadcaster(const lanshare_device_t* device, const char* service_type, int port);
@@ -121,6 +122,10 @@ private:
     int mdns_sock_ = -1;
 
     mutable std::mutex mutex_;
+    
+    // Device discovery callback
+    lanshare_device_callback_t device_callback_ = nullptr;
+    void* device_callback_user_data_ = nullptr;
     
 
     static thread_local char sendbuffer_[1024];
