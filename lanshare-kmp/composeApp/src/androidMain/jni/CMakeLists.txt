@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.22.1)
 
 project(LANShareNative C CXX)
-
+set(CMAKE_PREFIX_PATH "D:/cmakelib_android/arm64-v8a")
+set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH)
 # 定义源文件 - 相对于 composeApp/src/androidMain/jni 的路径
 # 从 jni/ 到 c-native/ 的路径: ../../../../../c-native
 set(NATIVE_SOURCE_DIR ${CMAKE_SOURCE_DIR}/../../../../c-native)
@@ -10,21 +11,28 @@ set(NATIVE_SOURCE_DIR ${CMAKE_SOURCE_DIR}/../../../../c-native)
 set(LANSHARE_ENABLE_TRANSFER ON)
 set(LANSHARE_ENABLE_MDNS ON)
 
+# 查找 NNG 库 (Android 预编译库)
+find_package(nng REQUIRED CONFIG)
+if(nng_FOUND)
+    message(STATUS "nng found")
+endif()
+
 # mDNS库 (使用 mjansson/mdns)
 set(MDNS_DIR ${NATIVE_SOURCE_DIR}/mdns)
 set(MDNS_SOURCES
     ${MDNS_DIR}/MDNSManager.cpp  # LAN-Share mDNS 适配层 (C++17)
     ${MDNS_DIR}/lanshare_log.cpp  # Logging implementation
-    #${NATIVE_SOURCE_DIR}/external/mdns/mdns.c  # mjansson/mdns library
 )
 
-# Transfer 实现 (实际的文件名)
+# Transfer 实现 (NNG only)
 set(TRANSFER_DIR ${NATIVE_SOURCE_DIR}/transfer)
-set(TRANSFER_SOURCES
-    ${TRANSFER_DIR}/transfer_file.c
-    ${TRANSFER_DIR}/transfer_protocol.c
-    ${TRANSFER_DIR}/transfer_socket.c
-)
+if(LANSHARE_ENABLE_TRANSFER)
+    message(STATUS "Using NNG for file transfer")
+    set(TRANSFER_SOURCES
+        ${TRANSFER_DIR}/transfer_file.c
+        ${TRANSFER_DIR}/transfer_nng.c
+    )
+endif()
 
 # JNI实现
 set(JNI_SOURCES
@@ -38,6 +46,7 @@ include_directories(
     ${NATIVE_SOURCE_DIR}/external/mdns
     ${TRANSFER_DIR}
 )
+
 
 # 编译共享库
 add_library(
@@ -59,6 +68,10 @@ target_link_libraries(
     lanshare_native
     log
 )
+
+if(LANSHARE_ENABLE_TRANSFER)
+    target_link_libraries(lanshare_native nng::nng)
+endif()
 
 # C++17 支持
 set_target_properties(lanshare_native PROPERTIES

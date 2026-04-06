@@ -1,7 +1,7 @@
 # LAN-Share Native Library CMake Configuration
 # Configurable variables:
 #   LANSHARE_ENABLE_MDNS - Enable mDNS support (default: ON)
-#   LANSHARE_ENABLE_TRANSFER - Enable socket transfer (default: ON)
+#   LANSHARE_ENABLE_TRANSFER - Enable file transfer (default: ON)
 #   LANSHARE_ENABLE_TESTS - Enable tests (default: OFF)
 
 cmake_minimum_required(VERSION 3.10)
@@ -9,8 +9,39 @@ project(LANShareNative C CXX)
 
 # Options
 option(LANSHARE_ENABLE_MDNS "Enable mDNS device discovery" ON)
-option(LANSHARE_ENABLE_TRANSFER "Enable socket data transfer" ON)
+option(LANSHARE_ENABLE_TRANSFER "Enable file transfer" ON)
 option(LANSHARE_ENABLE_TESTS "Enable tests" OFF)
+
+# Find NNG package (required for transfer)
+if(LANSHARE_ENABLE_TRANSFER)
+    find_package(nng CONFIG QUIET)
+    if(NOT nng_FOUND)
+        # Try finding with pkg-config or manual paths
+        find_path(NNG_INCLUDE_DIR nng/nng.h
+            PATHS 
+                "${CMAKE_PREFIX_PATH}/include"
+                "D:/cmakelib_android/arm64-v8a/include"
+                "$ENV{NNG_ROOT}/include"
+        )
+        find_library(NNG_LIBRARY nng
+            PATHS
+                "${CMAKE_PREFIX_PATH}/lib"
+                "D:/cmakelib_android/arm64-v8a/lib"
+                "$ENV{NNG_ROOT}/lib"
+        )
+        if(NNG_INCLUDE_DIR AND NNG_LIBRARY)
+            set(nng_FOUND TRUE)
+            set(nng_INCLUDE_DIRS ${NNG_INCLUDE_DIR})
+            set(nng_LIBRARIES ${NNG_LIBRARY})
+            message(STATUS "Found NNG: ${NNG_LIBRARY}")
+        else()
+            message(FATAL_ERROR "NNG not found. Please install NNG or set NNG_ROOT.")
+        endif()
+    else()
+        set(nng_INCLUDE_DIRS "")
+        set(nng_LIBRARIES nng::nng)
+    endif()
+endif()
 
 # Source files
 set(LANSHARE_PUBLIC_HEADERS
@@ -26,12 +57,14 @@ set(LANSHARE_MDNS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/mdns/lanshare_log.cpp  # Logging implementation
 )
 
-# Transfer implementation
-set(LANSHARE_TRANSFER_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/transfer/transfer_file.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/transfer/transfer_protocol.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/transfer/transfer_socket.c
-)
+# Transfer implementation (NNG only)
+if(LANSHARE_ENABLE_TRANSFER)
+    message(STATUS "Using NNG for file transfer")
+    set(LANSHARE_TRANSFER_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/transfer/transfer_file.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/transfer/transfer_nng.c
+    )
+endif()
 
 # JNI sources
 set(LANSHARE_JNI_SOURCES)
@@ -67,6 +100,12 @@ target_link_libraries(lanshare
     ${CMAKE_DL_LIBS}
     ${CMAKE_THREAD_LIBS_INIT}
 )
+
+# Link NNG for transfer
+if(LANSHARE_ENABLE_TRANSFER AND nng_FOUND)
+    target_include_directories(lanshare PRIVATE ${nng_INCLUDE_DIRS})
+    target_link_libraries(lanshare ${nng_LIBRARIES})
+endif()
 
 # C++17 support
 set_target_properties(lanshare PROPERTIES

@@ -64,6 +64,11 @@ android {
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
         versionName = "1.0.0"
+        
+        // Only build for arm64-v8a (NNG library is only available for this ABI)
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
     packaging {
         resources {
