@@ -24,6 +24,10 @@ static JavaVM* g_vm = NULL;
 static jobject g_device_callback = NULL;
 static jmethodID g_device_callback_method = NULL;
 
+/* Global reference for transfer progress callback */
+static jobject g_transfer_progress_callback = NULL;
+static jmethodID g_transfer_progress_method = NULL;
+
 
 /* Android log level mapping */
 static android_LogPriority lanshare_level_to_android(lanshare_log_level_t level) {
@@ -329,12 +333,6 @@ JNIEXPORT jlong JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_uploadCreateWit
     return (jlong)(intptr_t)handle;
 }
 
-/* JNI function: uploadStart */
-JNIEXPORT jint JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_uploadStart
-  (JNIEnv* env, jclass clazz, jlong handle)
-{
-    return lanshare_upload_start((lanshare_upload_handle_t)(intptr_t)handle, NULL, NULL);
-}
 
 /* JNI function: uploadPause */
 JNIEXPORT jint JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_uploadPause
@@ -376,13 +374,135 @@ JNIEXPORT jint JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_uploadGetStatus
     return -1;
 }
 
+/* Transfer progress callback from native thread */
+static void transfer_progress_callback(const lanshare_transfer_info_t* info, void* user_data)
+{
+    (void)user_data;
+
+    if (!g_vm || !g_transfer_progress_callback || !g_transfer_progress_method) {
+        return;
+    }
+
+    /* Get JNIEnv from native thread */
+    JNIEnv* env;
+    jint get_env_result = (*g_vm)->GetEnv(g_vm, (void**)&env, JNI_VERSION_1_6);
+    int need_detach = 0;
+
+    /* If not attached, attach this thread to JVM */
+    if (get_env_result == JNI_EDETACHED) {
+        jint attach_result = (*g_vm)->AttachCurrentThread(g_vm, &env, NULL);
+        if (attach_result != JNI_OK) {
+            LOGE("JNI", "Failed to attach thread to JVM for transfer callback");
+            return;
+        }
+        need_detach = 1;
+    } else if (get_env_result != JNI_OK) {
+        LOGE("JNI", "Failed to get JNIEnv for transfer callback");
+        return;
+    }
+
+    /* Create TransferInfo object */
+    jclass info_class = (*env)->FindClass(env, "com/lnan/lanshare/model/TransferInfo");
+    if (!info_class) {
+        LOGE("JNI", "Failed to find TransferInfo class");
+        if (need_detach) {
+            (*g_vm)->DetachCurrentThread(g_vm);
+        }
+        return;
+    }
+
+    /* Get constructor: TransferInfo(String, String, String, String, TransferState, TransferType, int, long, long, double, boolean) */
+    jmethodID ctor = (*env)->GetMethodID(env, info_class, "<init>",
+        "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/lnan/lanshare/model/TransferState;Lcom/lnan/lanshare/model/TransferType;IJJDZ)V");
+    if (!ctor) {
+        LOGE("JNI", "Failed to get TransferInfo constructor");
+        (*env)->DeleteLocalRef(env, info_class);
+        if (need_detach) {
+            (*g_vm)->DetachCurrentThread(g_vm);
+        }
+        return;
+    }
+
+    /* Get TransferState enum value */
+    jclass state_class = (*env)->FindClass(env, "com/lnan/lanshare/model/TransferState");
+    jfieldID state_field = (*env)->GetStaticFieldID(env, state_class,
+        info->state == TRANSFER_STATE_PENDING_CONFIRM ? "PENDING_CONFIRM" :
+        info->state == TRANSFER_STATE_TRANSFERRING ? "TRANSFERRING" :
+        info->state == TRANSFER_STATE_FINISHED ? "FINISHED" :
+        info->state == TRANSFER_STATE_CANCELLED ? "CANCELLED" :
+        info->state == TRANSFER_STATE_ERROR ? "ERROR" : "IDLE",
+        "Lcom/lnan/lanshare/model/TransferState;");
+    jobject state_obj = (*env)->GetStaticObjectField(env, state_class, state_field);
+
+    /* Get TransferType enum value */
+    jclass type_class = (*env)->FindClass(env, "com/lnan/lanshare/model/TransferType");
+    jfieldID type_field = (*env)->GetStaticFieldID(env, type_class,
+        info->type == TRANSFER_TYPE_DOWNLOAD ? "DOWNLOAD" : "UPLOAD",
+        "Lcom/lnan/lanshare/model/TransferType;");
+    jobject type_obj = (*env)->GetStaticObjectField(env, type_class, type_field);
+
+    /* Create Java strings */
+    jstring j_file_path = (*env)->NewStringUTF(env, info->file_path);
+    jstring j_file_name = (*env)->NewStringUTF(env, info->file_name);
+    jstring j_peer_id = (*env)->NewStringUTF(env, info->peer_id);
+    jstring j_peer_name = (*env)->NewStringUTF(env, info->peer_name);
+
+    /* Create TransferInfo object */
+    LOGI("JNI", "Creating TransferInfo: progress=%d, data_size=%lld, bytes_transferred=%lld, speed=%.2f, is_sender=%d",
+         info->progress, (long long)info->data_size, (long long)info->bytes_transferred, 
+         info->transfer_speed, info->is_sender);
+    
+    jobject j_info = (*env)->NewObject(env, info_class, ctor,
+        j_file_path, j_file_name, j_peer_id, j_peer_name,
+        state_obj, type_obj,
+        (jint)info->progress,
+        (jlong)info->data_size,
+        (jlong)info->bytes_transferred,
+        (jdouble)info->transfer_speed,
+        (jboolean)info->is_sender);
+    
+    if (!j_info) {
+        LOGE("JNI", "Failed to create TransferInfo object");
+        goto cleanup;
+    }
+
+    /* Call the callback method */
+    LOGI("JNI", "Calling transfer progress callback");
+    (*env)->CallVoidMethod(env, g_transfer_progress_callback, g_transfer_progress_method, j_info);
+    
+cleanup:
+
+    /* Clean up */
+    (*env)->DeleteLocalRef(env, j_file_path);
+    (*env)->DeleteLocalRef(env, j_file_name);
+    (*env)->DeleteLocalRef(env, j_peer_id);
+    (*env)->DeleteLocalRef(env, j_peer_name);
+    (*env)->DeleteLocalRef(env, state_obj);
+    (*env)->DeleteLocalRef(env, type_obj);
+    (*env)->DeleteLocalRef(env, j_info);
+    (*env)->DeleteLocalRef(env, info_class);
+    (*env)->DeleteLocalRef(env, state_class);
+    (*env)->DeleteLocalRef(env, type_class);
+
+    /* Detach thread only if we attached it */
+    if (need_detach) {
+        (*g_vm)->DetachCurrentThread(g_vm);
+    }
+}
+/* JNI function: uploadStart */
+JNIEXPORT jint JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_uploadStart
+    (JNIEnv* env, jclass clazz, jlong handle)
+{
+  return lanshare_upload_start((lanshare_upload_handle_t)(intptr_t)handle, transfer_progress_callback, NULL);
+}
+
 /* JNI function: downloadServerStart */
 JNIEXPORT jint JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_downloadServerStart
   (JNIEnv* env, jclass clazz, jint port, jstring saveDir)
 {
     const char* c_save_dir = saveDir ? jstring_to_cstring(env, saveDir) : NULL;
     
-    int result = lanshare_download_server_start(port, c_save_dir, NULL, NULL);
+    int result = lanshare_download_server_start(port, c_save_dir, transfer_progress_callback, NULL);
     
     if (saveDir && c_save_dir) {
         (*env)->ReleaseStringUTFChars(env, saveDir, c_save_dir);
@@ -402,6 +522,31 @@ JNIEXPORT jint JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_downloadServerSt
   (JNIEnv* env, jclass clazz)
 {
     return lanshare_download_server_stop();
+}
+
+/* JNI function: setTransferDecision */
+JNIEXPORT void JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_setTransferDecision
+  (JNIEnv* env, jclass clazz, jboolean accept)
+{
+    lanshare_set_transfer_decision(accept ? 1 : 0);
+}
+
+/* JNI function: getPendingTransfer */
+JNIEXPORT jstring JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_getPendingTransfer
+  (JNIEnv* env, jclass clazz)
+{
+    char filename[256] = {0};
+    uint64_t file_size = 0;
+    
+    if (lanshare_get_pending_transfer(filename, sizeof(filename), &file_size) == 0) {
+        /* Return JSON with filename and size */
+        char result[512];
+        snprintf(result, sizeof(result), "{\"filename\":\"%s\",\"size\":%llu}", 
+                 filename, (unsigned long long)file_size);
+        return (*env)->NewStringUTF(env, result);
+    }
+    
+    return (*env)->NewStringUTF(env, "{}");
 }
 
 /* JNI function: downloadCreate */
@@ -528,4 +673,44 @@ JNIEXPORT void JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_unregisterDevice
         g_device_callback_method = NULL;
     }
     LOGI("JNI", "Device callback unregistered");
+}
+
+/* JNI function: registerTransferProgressCallback */
+JNIEXPORT void JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_registerTransferProgressCallback
+  (JNIEnv* env, jclass clazz, jobject callback)
+{
+    /* Delete old callback if exists */
+    if (g_transfer_progress_callback != NULL) {
+        (*env)->DeleteGlobalRef(env, g_transfer_progress_callback);
+        g_transfer_progress_callback = NULL;
+    }
+    
+    if (callback != NULL) {
+        /* Create global reference */
+        g_transfer_progress_callback = (*env)->NewGlobalRef(env, callback);
+        
+        /* Get callback method */
+        jclass callback_class = (*env)->GetObjectClass(env, callback);
+        g_transfer_progress_method = (*env)->GetMethodID(env, callback_class, 
+                                                       "onTransferProgress", 
+                                                       "(Lcom/lnan/lanshare/model/TransferInfo;)V");
+        (*env)->DeleteLocalRef(env, callback_class);
+        
+        LOGI("JNI", "Transfer progress callback registered successfully");
+    } else {
+        g_transfer_progress_method = NULL;
+        LOGI("JNI", "Transfer progress callback unregistered");
+    }
+}
+
+/* JNI function: unregisterTransferProgressCallback */
+JNIEXPORT void JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_unregisterTransferProgressCallback
+  (JNIEnv* env, jclass clazz)
+{
+    if (g_transfer_progress_callback != NULL) {
+        (*env)->DeleteGlobalRef(env, g_transfer_progress_callback);
+        g_transfer_progress_callback = NULL;
+        g_transfer_progress_method = NULL;
+    }
+    LOGI("JNI", "Transfer progress callback unregistered");
 }

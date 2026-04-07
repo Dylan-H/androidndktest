@@ -89,3 +89,6 @@ ios/*/
 jni/"
 jni/Android.mk
 jni/Application.mk
+
+.kotlin
+.cxx
