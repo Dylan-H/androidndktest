@@ -17,7 +17,8 @@ jobs:
       # 1. 检出代码
       - name: Checkout code
         uses: actions/checkout@v4
-
+      - name: Clean Gradle cache (force)
+        run: rm -rf ~/.gradle
       # 2. 设置 Java 17 (Android Gradle Plugin 8.0+ 需要)
       - name: Set up JDK 17
         uses: actions/setup-java@v4
