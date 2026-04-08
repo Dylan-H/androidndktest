@@ -1,94 +1,119 @@
-<p align="center">
-    <img src="src/img/icon.png" alt="LAN Share Icon"/>
-</p>
+# LAN Share KMP (Kotlin Multiplatform)
 
-<p align="center">
-    <a href="https://travis-ci.org/abdularis/LAN-Share">
-        <img src="https://travis-ci.org/abdularis/LAN-Share.svg?branch=master" alt="Build Status"/>
-    </a>
-</p>
+Kotlin Multiplatform version of LAN Share for Android
 
-# LAN Share
+## Project Structure
 
-LAN Share is a cross-platform application for transferring files over a local area network. Built with the Qt GUI framework, it enables seamless transfer of files or folders, large or small, without additional configuration.
-
-## Installation
-
-Download the latest version from the [releases page](https://github.com/abdularis/LAN-Share/releases).
-
-### Ubuntu/Debian (.deb)
-1. Download the `.deb` package (e.g., `lanshare_1.2.1-1_amd64.deb`).
-2. Open a terminal and navigate to the download directory.
-3. Run:
-   ```
-   sudo dpkg -i ./lanshare_1.2.1-1_amd64.deb
-   ```
-
-### Arch Linux (AUR)
-1. Download the [PKGBUILD](https://aur.archlinux.org/packages/lan-share-bin).
-2. In a terminal, run:
-   ```
-   makepkg -si
-   ```
-   Or, with an AUR helper:
-   ```
-   yay -S lan-share-bin
-   ```
-
-### Linux (AppImage)
-1. Download the AppImage.
-2. Make it executable:
-   ```
-   chmod +x ./LANShare.AppImage
-   ```
-3. Run the AppImage directly.
-
-### Windows
-Download the executable from the [releases page](https://github.com/abdularis/LAN-Share/releases) or [Softpedia](https://www.softpedia.com/get/Internet/File-Sharing/LAN-Share.shtml).
-
-## Compiling from Source
-
-### Prerequisites
-Install Qt tools. For Debian-based systems:
 ```
-sudo apt install qt5-qmake qt5-default
+lanshare-kmp/
+├── build.gradle.kts          # Root build configuration
+├── settings.gradle.kts       # Gradle settings
+├── gradle.properties         # Gradle properties
+├── gradle/
+│   ├── libs.versions.toml    # Dependency versions
+│   └── wrapper/              # Gradle wrapper
+├── composeApp/
+│   ├── build.gradle.kts      # KMP configuration
+│   └── src/
+│       ├── commonMain/       # Common code
+│       │   └── kotlin/
+│       │       └── com/lnan/lanshare/
+│       │           ├── App.kt
+│       │           ├── Platform.kt
+│       │           ├── model/    # Data models
+│       │           ├── ui/       # UI screens
+│       │           └── network/  # Network layer
+│       ├── androidMain/      # Android-specific code
+│       │   ├── kotlin/
+│       │   │   └── com/lnan/lanshare/
+│       │   │       ├── MainActivity.kt
+│       │   │       ├── Platform.android.kt
+│       │   │       ├── network/
+│       │   │       └── ndk/      # NDK bindings
+│       │   ├── jni/            # Native C code
+│       │   │   ├── CMakeLists.txt
+│       │   │   └── *.h
+│       │   └── res/            # Android resources
+│       │       ├── values/
+│       │       ├── mipmap/
+│       │       └── ...
+│       └── c-native/           # C/C++ native library (separate)
+│           ├── mdns/
+│           │   ├── MDNSManager.h    # C++17 mDNS manager header
+│           │   └── MDNSManager.cpp  # C++17 mDNS manager implementation
+│           ├── transfer/
+│           ├── jni/
+│           └── include/
 ```
-Learn more about `qmake` [here](https://doc.qt.io/qt-5/qmake-tutorial.html).
 
-### Steps
-1. Clone the repository:
-   ```
-   git clone https://github.com/abdularis/LAN-Share
-   ```
-2. Navigate to the source directory:
-   ```
-   cd LAN-Share-1.2.1/src
-   ```
-3. Compile:
-   ```
-   qmake -o Makefile LANShare.pro
-   make
-   ```
+## Building
+
+```bash
+cd lanshare-kmp
+./gradlew assembleDebug
+```
+
+## Running
+
+```bash
+./gradlew installDebug
+```
+
+## Prerequisites
+
+- Android SDK (API 24+)
+- Android NDK r26+
+- CMake 3.22+
+- Kotlin Multiplatform plugin
+- Java 17+ (for Kotlin 2.3.x, or Java 11 for Kotlin 2.1.x)
+
+## Network Requirements
+
+**Important**: This project requires access to Maven Central and Gradle Plugin Portal to download dependencies. If you encounter TLS handshake errors when building:
+
+### Solution 1: Configure Gradle with custom TLS protocols
+
+Add to `gradle.properties`:
+```properties
+org.gradle.jvmargs=-Xmx4096M -Dfile.encoding=UTF-8 -Dhttps.protocols=TLSv1.2,TLSv1.3
+```
+
+### Solution 2: Use a VPN or proxy
+
+If your network blocks or downgrades TLS connections to Maven Central, use a VPN or configure Gradle to use a proxy.
+
+### Solution 3: Use a Maven Mirror
+
+Configure a Maven mirror in `settings.gradle.kts`:
+```kotlin
+pluginManagement {
+    repositories {
+        // Add Aliyun mirror for China
+        maven("https://maven.aliyun.com/repository/public")
+        maven("https://maven.aliyun.com/repository/gradle-plugin")
+    }
+}
+```
+
+### Solution 4: Use cached dependencies
+
+If you've built successfully before, Gradle may cache the plugins. Try:
+```bash
+./gradlew --offline projects
+```
 
 ## Features
-- Transfer single or multiple files
-- Send entire folders
-- Support for multiple simultaneous receivers
-- Pause, resume, or cancel transfers
 
-## Usage
-1. Ensure both sender and receiver are connected to the same local network (wired or wireless).
-2. Launch LAN Share on both devices.
-3. On the sender’s device:
-   - Click *Send* and choose files or folders.
-   - Select the receiver in the *Select Receiver* dialog.
-   - Click *Send* to start the transfer.
-4. The receiver automatically accepts the files or folders.
+- mDNS device discovery
+- NNG-based file transfer
+- Cross-platform support (Android, iOS, JVM)
 
-## Screenshots
-![Screenshot 1](screenshot.png)
-![Screenshot 2](screenshot2.png)
-![Screenshot 3](screenshot3.png)
+## Native Library
 
-## License
-GPLv3
+The project uses the C native library from `c-native/` directory which provides:
+- mDNS/DNS-SD device discovery  
+- NNG-based reliable messaging
+
+## Issues
+
+For TLS handshake failures, see [Gradle SSL Handbook](https://docs.gradle.org/8.14.3/userguide/build_environment.html#sec:gradle_system_properties)
