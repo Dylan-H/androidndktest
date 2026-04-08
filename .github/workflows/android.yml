@@ -7,42 +7,56 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest               # 使用 Ubuntu 环境，工具链更全 [citation:2]
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: lanshare-kmp
 
     steps:
       # 1. 检出代码
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. 设置 Java 环境
-      - name: Set up JDK 11
+      # 2. 设置 Java 17 (Android Gradle Plugin 8.0+ 需要)
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '11'
+          java-version: '17'
           cache: 'gradle'
 
-      # 3. 设置 Android SDK, NDK 和 CMake
-      - name: Set up Android SDK/NDK/CMake
-        uses: android-actions/setup-android@v3   # 社区维护的 Action [citation:3]
-        # 或者也可以使用官方维护的 amyu/setup-android@v5 [citation:4]
-        with:
-          # 指定 NDK 版本 (推荐使用 LTS 版本)
-          ndk-version: '21.4.7075529'           # 根据项目需求填写 [citation:1]
-          # 指定 CMake 版本
-          cmake-version: '3.22.1'                # 根据项目需求填写 [citation:4]
-          # 指定 Build Tools 版本
-          build-tools-version: '34.0.0'
+      # 3. 设置 Android SDK 环境变量 (runner 已预装)
+      - name: Set up Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
 
-      # 4. 赋予 Gradle 执行权限并开始构建
+      # 4. 列出可用的 NDK 和 CMake 版本 (可选，用于调试)
+      - name: List available NDK and CMake
+        run: |
+          echo "Available NDK versions:"
+          ls $ANDROID_HOME/ndk/ 2>/dev/null || echo "No NDK found"
+          echo "Available CMake versions:"
+          ls $ANDROID_HOME/cmake/ 2>/dev/null || echo "No CMake found"
+
+      # 5. 确保 NDK 和 CMake 已安装 (通过 sdkmanager)
+      - name: Install required NDK and CMake
+        run: |
+          # 安装 NDK (修改版本号为你需要的)
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;21.4.7075529"
+          # 安装 CMake (修改版本号为你需要的)
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "cmake;3.22.1"
+
+      # 6. 赋予 Gradle 执行权限并开始构建
       - name: Build Release APK
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --stacktrace
 
-      # 5. 上传 APK 作为构建产物
+      # 7. 上传 APK
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-release
-          path: app/build/outputs/apk/release/*.apk
+          name: lanshare-kmp-release
+          path: lanshare-kmp/app/build/outputs/apk/release/*.apk
