@@ -57,9 +57,7 @@ libs/
 local.properties
 local.properties.example
 
-# Kotlin
-kotlin/
-!.kotlin/
+
 
 # CMake
 cmake-build-*/

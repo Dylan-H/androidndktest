@@ -123,51 +123,7 @@ int lanshare_get_pending_transfer(char* filename, size_t filename_size, uint64_t
  */
 int lanshare_download_server_stop(void);
 
-/* ========== Download API (Client Mode) ========== */
 
-/**
- * Create download request
- * @param peer_ip Peer device IP address
- * @param port Peer device port
- * @param remote_file_info Remote file info (filename)
- * @return Download handle, NULL on failure
- */
-lanshare_download_handle_t lanshare_download_create(const char* peer_ip, int port,
-                                                      const char* remote_file_info);
-
-/**
- * Start download
- * @param handle Download handle
- * @return 0 on success, -1 on failure
- */
-int lanshare_download_start(lanshare_download_handle_t handle);
-
-/**
- * Pause download
- * @param handle Download handle
- * @return 0 on success, -1 on failure
- */
-int lanshare_download_pause(lanshare_download_handle_t handle);
-
-/**
- * Resume download
- * @param handle Download handle
- * @return 0 on success, -1 on failure
- */
-int lanshare_download_resume(lanshare_download_handle_t handle);
-
-/**
- * Cancel download
- * @param handle Download handle
- * @return 0 on success, -1 on failure
- */
-int lanshare_download_cancel(lanshare_download_handle_t handle);
-
-/**
- * Destroy download handle and cleanup resources
- * @param handle Download handle
- */
-void lanshare_download_destroy(lanshare_download_handle_t handle);
 
 /* ========== Common API ========== */
 

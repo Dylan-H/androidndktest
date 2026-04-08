@@ -1294,47 +1294,6 @@ int lanshare_download_server_stop(void)
     return 0;
 }
 
-/* ========== Download Client (not implemented - use upload on peer) ========== */
-
-lanshare_download_handle_t lanshare_download_create(const char* peer_ip, int port,
-                                                      const char* remote_file_info)
-{
-    /* Download is implemented as reverse upload - the peer uploads to us */
-    (void)peer_ip;
-    (void)port;
-    (void)remote_file_info;
-    return NULL;
-}
-
-int lanshare_download_start(lanshare_download_handle_t handle)
-{
-    (void)handle;
-    return -1;
-}
-
-int lanshare_download_pause(lanshare_download_handle_t handle)
-{
-    (void)handle;
-    return -1;
-}
-
-int lanshare_download_resume(lanshare_download_handle_t handle)
-{
-    (void)handle;
-    return -1;
-}
-
-int lanshare_download_cancel(lanshare_download_handle_t handle)
-{
-    (void)handle;
-    return -1;
-}
-
-void lanshare_download_destroy(lanshare_download_handle_t handle)
-{
-    (void)handle;
-}
-
 /* ========== Common API ========== */
 
 int lanshare_get_transfer_info(void* handle, int is_upload, lanshare_transfer_info_t* info)

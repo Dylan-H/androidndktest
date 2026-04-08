@@ -70,9 +70,7 @@ typedef struct {
 } lanshare_transfer_info_t;
 
 /* Protocol constants */
-#define LANSHARE_FRAME_HEADER_SIZE 24
-#define LANSHARE_MAX_PACKET_SIZE (1024 * 1024)  /* 1MB */
-#define LANSHARE_DEFAULT_PORT 17116
+
 #define LANSHARE_MDNS_SERVICE_TYPE "_lanshare._tcp"
 
 /* Confirmation timeout in milliseconds (1 minute) */

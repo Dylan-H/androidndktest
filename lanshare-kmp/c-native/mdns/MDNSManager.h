@@ -32,7 +32,7 @@ namespace mdns {
 constexpr int MAX_DISCOVERED_DEVICES = 50;
 constexpr int MAX_SERVICE_INSTANCES = 50;
 constexpr const char* VERSION = "1.0.0-mdns";
-constexpr int DEFAULT_SERVICE_PORT = 17116;
+
 
 struct ServiceDiscovery {
     std::string instance_name;
@@ -42,6 +42,8 @@ struct ServiceDiscovery {
     bool has_srv = false;
     bool has_a = false;
     bool has_txt = false;
+    bool txt_query_sent = false;  // Track if TXT query was already sent
+    bool a_query_sent = false;    // Track if A query was already sent
     char os_name[64] = {0};
 };
 

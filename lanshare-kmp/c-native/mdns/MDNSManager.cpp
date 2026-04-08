@@ -162,23 +162,33 @@ int MDNSManager::recordCallback(int sock, const struct sockaddr* from, size_t ad
             svc->port = srv.port;
             svc->has_srv = true;
             
-            size_t capacity = 2048;
-            auto buffer = std::make_unique<char[]>(capacity);
-            if (buffer) {
-
-                // Also query TXT record for OS name
-                int txt_query_id = mdns_query_send(sock, MDNS_RECORDTYPE_TXT,
-                                                   entry_name, strlen(entry_name),
-                                                   buffer.get(), capacity, 0);
-                if (txt_query_id >= 0) {
-                    LOGD("MDNSManager", "Sent TXT query for %s", entry_name);
+            // Only send TXT and A queries if we haven't already sent them and haven't received the records
+            if (!svc->txt_query_sent && !svc->has_txt) {
+                size_t capacity = 2048;
+                auto buffer = std::make_unique<char[]>(capacity);
+                if (buffer) {
+                    // Query TXT record for OS name
+                    int txt_query_id = mdns_query_send(sock, MDNS_RECORDTYPE_TXT,
+                                                       entry_name, strlen(entry_name),
+                                                       buffer.get(), capacity, 0);
+                    if (txt_query_id >= 0) {
+                        LOGD("MDNSManager", "Sent TXT query for %s", entry_name);
+                        svc->txt_query_sent = true;  // Mark as sent to avoid duplicate queries
+                    }
                 }
-
-                int a_query_id = mdns_query_send(sock, MDNS_RECORDTYPE_A,
-                                                 srv.name.str, srv.name.length,
-                                                 buffer.get(), capacity, 0);
-                if (a_query_id >= 0) {
-                  LOGD("MDNSManager", "Sent A query for %.*s", MDNS_STRING_FORMAT(srv.name));
+            }
+            
+            if (!svc->a_query_sent && !svc->has_a) {
+                size_t capacity = 2048;
+                auto buffer = std::make_unique<char[]>(capacity);
+                if (buffer) {
+                    int a_query_id = mdns_query_send(sock, MDNS_RECORDTYPE_A,
+                                                     srv.name.str, srv.name.length,
+                                                     buffer.get(), capacity, 0);
+                    if (a_query_id >= 0) {
+                        LOGD("MDNSManager", "Sent A query for %.*s", MDNS_STRING_FORMAT(srv.name));
+                        svc->a_query_sent = true;  // Mark as sent to avoid duplicate queries
+                    }
                 }
             }
         }
@@ -838,7 +848,7 @@ int MDNSManager::serviceMDNS(const std::string& hostname,
             mdns_announce_multicast(sockets[isock], buffer.get(), capacity, service.record_ptr, 0, 0,
                                    additional, additional_count);
     }
-
+    running_ =true;
     while (running_) {
         int nfds = 0;
         fd_set readfs;
@@ -996,6 +1006,7 @@ int MDNSManager::startBroadcaster(const lanshare_device_t* device, const char* s
 }
 
 void MDNSManager::stopBroadcaster() {
+     running_ = false;
 }
 
 const char* MDNSManager::getDiscoveredDevices(char* buffer, size_t buffer_size) {
