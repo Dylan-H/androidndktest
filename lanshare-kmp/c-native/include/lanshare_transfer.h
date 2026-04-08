@@ -180,11 +180,7 @@ void lanshare_download_destroy(lanshare_download_handle_t handle);
  */
 int lanshare_get_transfer_info(void* handle, int is_upload, lanshare_transfer_info_t* info);
 
-/**
- * Get transfer module version
- * @return Version string
- */
-const char* lanshare_transfer_version(void);
+
 
 /* ========== File Operations ========== */
 

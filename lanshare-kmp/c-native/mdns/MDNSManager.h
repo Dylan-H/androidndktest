@@ -41,6 +41,8 @@ struct ServiceDiscovery {
     struct sockaddr_in addr{};
     bool has_srv = false;
     bool has_a = false;
+    bool has_txt = false;
+    char os_name[64] = {0};
 };
 
 struct service_t {
@@ -55,7 +57,8 @@ struct service_t {
     mdns_record_t record_srv;
     mdns_record_t record_a;
     mdns_record_t record_aaaa;
-    mdns_record_t txt_record[2];
+    mdns_record_t txt_record[3];
+    char os_name_buffer[64];
 };
 
 class MDNSManager {
@@ -72,24 +75,19 @@ public:
     MDNSManager& operator=(MDNSManager&&) = default;
     
     int startDiscoverer(lanshare_device_callback_t callback, void* user_data);
-    void setDeviceCallback(lanshare_device_callback_t callback, void* user_data);
     void stopDiscoverer();
     
     int startBroadcaster(const lanshare_device_t* device, const char* service_type, int port);
     void stopBroadcaster();
     
     const char* getDiscoveredDevices(char* buffer, size_t buffer_size);
-    int addDevice(const lanshare_device_t* device);
-    void clearDevices();
-    int getDeviceCount() const;
-    const lanshare_device_t* getDevice(int index) const;
+
     int processResponses();
     
     int serviceMDNS(const std::string& hostname, 
                    const std::string& service_name, 
-                   int service_port);
-    
-    static const char* getVersion() { return VERSION; }
+                   int service_port,
+                   const std::string& os_name);
 
 private:
     ServiceDiscovery* findOrCreateService(const std::string& instance_name);

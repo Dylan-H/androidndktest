@@ -29,12 +29,8 @@
 namespace lanshare {
 namespace mdns {
 
-// Static member definitions
-//thread_local char MDNSManager::addrbuffer_[64];
-//thread_local char MDNSManager::entrybuffer_[256];
-//thread_local char MDNSManager::namebuffer_[256];
+
 thread_local char MDNSManager::sendbuffer_[1024];
-//thread_local mdns_record_txt_t MDNSManager::txtbuffer_[128];
 thread_local struct sockaddr_in MDNSManager::service_address_ipv4_{};
 thread_local struct sockaddr_in6 MDNSManager::service_address_ipv6_{};
 thread_local bool MDNSManager::has_ipv4_ = false;
@@ -100,12 +96,33 @@ int MDNSManager::recordCallback(int sock, const struct sockaddr* from, size_t ad
     (void)ttl;
     (void)name_length;
     
-    if (entry != MDNS_ENTRYTYPE_ANSWER) {
-        return 0;
-    }
-
     auto* manager = static_cast<MDNSManager*>(user_data);
     if (!manager) return 0;
+    
+    // Log all received records for debugging
+    const char* entry_type_str = "UNKNOWN";
+    if (entry == MDNS_ENTRYTYPE_ANSWER) entry_type_str = "ANSWER";
+    else if (entry == MDNS_ENTRYTYPE_QUESTION) entry_type_str = "QUESTION";
+    else if (entry == MDNS_ENTRYTYPE_AUTHORITY) entry_type_str = "AUTHORITY";
+    else if (entry == MDNS_ENTRYTYPE_ADDITIONAL) entry_type_str = "ADDITIONAL";
+    
+    const char* rtype_str = "UNKNOWN";
+    if (rtype == MDNS_RECORDTYPE_PTR) rtype_str = "PTR";
+    else if (rtype == MDNS_RECORDTYPE_SRV) rtype_str = "SRV";
+    else if (rtype == MDNS_RECORDTYPE_A) rtype_str = "A";
+    else if (rtype == MDNS_RECORDTYPE_AAAA) rtype_str = "AAAA";
+    else if (rtype == MDNS_RECORDTYPE_TXT) rtype_str = "TXT";
+    
+    char namebuf[256] = {0};
+    size_t name_offset_copy = name_offset;
+    mdns_string_t name = mdns_string_extract(data, size, &name_offset_copy, namebuf, sizeof(namebuf));
+    LOGD("MDNSManager", "recordCallback: entry=%s rtype=%s name=%.*s", 
+           entry_type_str, rtype_str, MDNS_STRING_FORMAT(name));
+    
+    // Process ANSWER and ADDITIONAL records (TXT records often come as ADDITIONAL)
+    if (entry != MDNS_ENTRYTYPE_ANSWER && entry != MDNS_ENTRYTYPE_ADDITIONAL) {
+        return 0;
+    }
 
     if (rtype == MDNS_RECORDTYPE_PTR) {
         char service_name[256];
@@ -148,11 +165,20 @@ int MDNSManager::recordCallback(int sock, const struct sockaddr* from, size_t ad
             size_t capacity = 2048;
             auto buffer = std::make_unique<char[]>(capacity);
             if (buffer) {
+
+                // Also query TXT record for OS name
+                int txt_query_id = mdns_query_send(sock, MDNS_RECORDTYPE_TXT,
+                                                   entry_name, strlen(entry_name),
+                                                   buffer.get(), capacity, 0);
+                if (txt_query_id >= 0) {
+                    LOGD("MDNSManager", "Sent TXT query for %s", entry_name);
+                }
+
                 int a_query_id = mdns_query_send(sock, MDNS_RECORDTYPE_A,
-                                               srv.name.str, srv.name.length,
-                                               buffer.get(), capacity, 0);
+                                                 srv.name.str, srv.name.length,
+                                                 buffer.get(), capacity, 0);
                 if (a_query_id >= 0) {
-                    LOGD("MDNSManager", "Sent A query for %.*s", MDNS_STRING_FORMAT(srv.name));
+                  LOGD("MDNSManager", "Sent A query for %.*s", MDNS_STRING_FORMAT(srv.name));
                 }
             }
         }
@@ -180,6 +206,30 @@ int MDNSManager::recordCallback(int sock, const struct sockaddr* from, size_t ad
         }
     }
     
+    if (rtype == MDNS_RECORDTYPE_TXT) {
+        char entry_name[256];
+        mdns_string_extract(data, size, &name_offset, entry_name, sizeof(entry_name));
+        LOGI("MDNSManager", "TXT record for %s", entry_name);
+        auto* svc = manager->findOrCreateService(entry_name);
+        if (svc) {
+            // Parse TXT records
+            mdns_record_txt_t txt_records[32];
+            size_t num_records = mdns_record_parse_txt(data, size, record_offset, record_length, 
+                                                        txt_records, sizeof(txt_records) / sizeof(txt_records[0]));
+            
+            for (size_t i = 0; i < num_records; i++) {
+                if (strncmp(txt_records[i].key.str, "os", txt_records[i].key.length) == 0) {
+                    size_t len = txt_records[i].value.length;
+                    if (len > sizeof(svc->os_name) - 1) len = sizeof(svc->os_name) - 1;
+                    memcpy(svc->os_name, txt_records[i].value.str, len);
+                    svc->os_name[len] = '\0';
+                    LOGI("MDNSManager", "Found OS name in TXT: %s", svc->os_name);
+                }
+            }
+            svc->has_txt = true;
+        }
+    }
+    
     return 0;
 }
 
@@ -200,7 +250,7 @@ ServiceDiscovery* MDNSManager::findOrCreateService(const std::string& instance_n
 }
 
 void MDNSManager::checkAndAddDevice(ServiceDiscovery* svc) {
-    LOGI("MDNSManager", "Checking and adding device %d %d", svc->has_srv, svc->has_a);
+    LOGI("MDNSManager", "Checking and adding device srv=%d a=%d txt=%d", svc->has_srv, svc->has_a, svc->has_txt);
     if (!svc || !svc->has_srv || !svc->has_a) {
         return;
     }
@@ -211,11 +261,21 @@ void MDNSManager::checkAndAddDevice(ServiceDiscovery* svc) {
             (unsigned char)((svc->addr.sin_addr.s_addr >> 8) & 0xFF),
             (unsigned char)((svc->addr.sin_addr.s_addr >> 16) & 0xFF),
             (unsigned char)((svc->addr.sin_addr.s_addr >> 24) & 0xFF));
-    LOGI("MDNSManager", "Checking and adding device2");
-    //std::lock_guard<std::mutex> lock(mutex_);
-
-    for (const auto& device : devices_) {
+    
+    // Check if device already exists (update if needed)
+    for (auto& device : devices_) {
         if (std::strcmp(device.ip_address, ip_str) == 0) {
+            // Update OS name if TXT record arrived later
+            if (svc->has_txt && svc->os_name[0] != '\0' && 
+                std::strcmp(device.os_name, svc->os_name) != 0) {
+                strncpy(device.os_name, svc->os_name, sizeof(device.os_name) - 1);
+                LOGI("MDNSManager", "Updated OS name for %s to: %s", device.name, device.os_name);
+                // Notify callback about the update
+                if (device_callback_) {
+                    LOGI("MDNSManager", "Calling device callback for updated device %s", device.name);
+                    device_callback_(&device, device_callback_user_data_);
+                }
+            }
             LOGI("MDNSManager", "Device already exists at %s", ip_str);
             return;
         }
@@ -236,10 +296,16 @@ void MDNSManager::checkAndAddDevice(ServiceDiscovery* svc) {
             strncpy(device.name, svc->instance_name.c_str(), sizeof(device.name) - 1);
         }
         
-        strncpy(device.os_name, "Unknown", sizeof(device.os_name) - 1);
+        if (svc->has_txt && svc->os_name[0] != '\0') {
+            strncpy(device.os_name, svc->os_name, sizeof(device.os_name) - 1);
+            LOGI("MDNSManager", "Using OS name from TXT: %s", device.os_name);
+        } else {
+            strncpy(device.os_name, "Unknown", sizeof(device.os_name) - 1);
+            LOGI("MDNSManager", "No TXT record yet, using Unknown");
+        }
         strncpy(device.ip_address, ip_str, sizeof(device.ip_address) - 1);
         
-        LOGI("MDNSManager", "Discovered device: %s at %s:%d", device.name, ip_str, svc->port);
+        LOGI("MDNSManager", "Discovered device: %s at %s:%d os=%s", device.name, ip_str, svc->port, device.os_name);
         
         devices_.push_back(device);
         
@@ -440,7 +506,7 @@ int MDNSManager::openServiceSockets(std::vector<int>& sockets, int max_sockets) 
         struct sockaddr_in sock_addr{};
         sock_addr.sin_family = AF_INET;
 #ifdef _WIN32
-        sock_addr.sin_addr.s_addr = inet_addr("192.168.3.64");
+        sock_addr.sin_addr.S_un.S_addr = INADDR_ANY;
 #else
         sock_addr.sin_addr.s_addr = INADDR_ANY;
 #endif
@@ -544,7 +610,6 @@ int MDNSManager::serviceCallback(int sock, const struct sockaddr* from, size_t a
                 additional[additional_count++] = service->record_aaaa;
 
             additional[additional_count++] = service->txt_record[0];
-            additional[additional_count++] = service->txt_record[1];
 
             uint16_t unicast = (rclass & MDNS_UNICAST_RESPONSE);
             LOGD("MDNSManager", "  --> answer %.*s (%s)",
@@ -576,8 +641,7 @@ int MDNSManager::serviceCallback(int sock, const struct sockaddr* from, size_t a
                 additional[additional_count++] = service->record_aaaa;
 
             additional[additional_count++] = service->txt_record[0];
-            additional[additional_count++] = service->txt_record[1];
-
+            
             uint16_t unicast = (rclass & MDNS_UNICAST_RESPONSE);
             LOGD("MDNSManager", "  --> answer %.*s port %d (%s)",
                    MDNS_STRING_FORMAT(service->record_srv.data.srv.name), service->port,
@@ -590,6 +654,23 @@ int MDNSManager::serviceCallback(int sock, const struct sockaddr* from, size_t a
             } else {
                 mdns_query_answer_multicast(sock, sendbuffer_, sizeof(sendbuffer_), answer, 0, 0,
                                             additional, additional_count);
+            }
+        }
+        else if (rtype == MDNS_RECORDTYPE_TXT) {
+            mdns_record_t answer = service->txt_record[0];
+            
+            uint16_t unicast = (rclass & MDNS_UNICAST_RESPONSE);
+            LOGD("MDNSManager", "  --> answer TXT %.*s (%s) : %.*s=%.*s",
+                   MDNS_STRING_FORMAT(service->txt_record[0].name),
+                   (unicast ? "unicast" : "multicast"),
+                   MDNS_STRING_FORMAT(answer.data.txt.key),
+                   MDNS_STRING_FORMAT(answer.data.txt.value));
+
+            if (unicast) {
+                mdns_query_answer_unicast(sock, from, addrlen, sendbuffer_, sizeof(sendbuffer_),
+                                         query_id, static_cast<mdns_record_type_t>(rtype), name.str, name.length, answer, 0, 0, 0, 0);
+            } else {
+                mdns_query_answer_multicast(sock, sendbuffer_, sizeof(sendbuffer_), answer, 0, 0, 0, 0);
             }
         }
     }
@@ -607,8 +688,7 @@ int MDNSManager::serviceCallback(int sock, const struct sockaddr* from, size_t a
                 additional[additional_count++] = service->record_aaaa;
 
             additional[additional_count++] = service->txt_record[0];
-            additional[additional_count++] = service->txt_record[1];
-
+            
             uint16_t unicast = (rclass & MDNS_UNICAST_RESPONSE);
             std::string addrstr = ipAddressToString(
                 (struct sockaddr*)&service->record_a.data.a.addr);
@@ -634,8 +714,7 @@ int MDNSManager::serviceCallback(int sock, const struct sockaddr* from, size_t a
                 additional[additional_count++] = service->record_a;
 
             additional[additional_count++] = service->txt_record[0];
-            additional[additional_count++] = service->txt_record[1];
-
+            
             uint16_t unicast = (rclass & MDNS_UNICAST_RESPONSE);
             std::string addrstr = ipAddressToString(
                 (struct sockaddr*)&service->record_aaaa.data.aaaa.addr);
@@ -658,7 +737,8 @@ int MDNSManager::serviceCallback(int sock, const struct sockaddr* from, size_t a
 
 int MDNSManager::serviceMDNS(const std::string& hostname, 
                             const std::string& service_name, 
-                            int service_port) {
+                            int service_port,
+                            const std::string& os_name) {
     std::vector<int> sockets;
     int num_sockets = openServiceSockets(sockets, 32);
     if (num_sockets <= 0) {
@@ -701,45 +781,47 @@ int MDNSManager::serviceMDNS(const std::string& hostname,
     service.address_ipv6 = service_address_ipv6_;
     service.port = service_port;
 
-    service.record_ptr = {.name = service.service,
-                         .type = MDNS_RECORDTYPE_PTR,
-                         .data = {.ptr = {.name = service.service_instance}},
-                         .rclass = 0,
-                         .ttl = 0};
+    // Initialize records
+    service.record_ptr.name = service.service;
+    service.record_ptr.type = MDNS_RECORDTYPE_PTR;
+    service.record_ptr.data.ptr.name = service.service_instance;
+    service.record_ptr.rclass = 0;
+    service.record_ptr.ttl = 0;
 
-    service.record_srv = {.name = service.service_instance,
-                         .type = MDNS_RECORDTYPE_SRV,
-                         .data = {.srv = {.name = service.hostname_qualified,
-                                        .port = static_cast<uint16_t>(service.port),
-                                        .priority = 0,
-                                        .weight = 0}},
-                         .rclass = 0,
-                         .ttl = 0};
+    service.record_srv.name = service.service_instance;
+    service.record_srv.type = MDNS_RECORDTYPE_SRV;
+    service.record_srv.data.srv.name = service.hostname_qualified;
+    service.record_srv.data.srv.port = static_cast<uint16_t>(service.port);
+    service.record_srv.data.srv.priority = 0;
+    service.record_srv.data.srv.weight = 0;
+    service.record_srv.rclass = 0;
+    service.record_srv.ttl = 0;
 
-    service.record_a = {.name = service.hostname_qualified,
-                       .type = MDNS_RECORDTYPE_A,
-                       .data = {.a = {.addr = service.address_ipv4}},
-                       .rclass = 0,
-                       .ttl = 0};
+    service.record_a.name = service.hostname_qualified;
+    service.record_a.type = MDNS_RECORDTYPE_A;
+    service.record_a.data.a.addr = service.address_ipv4;
+    service.record_a.rclass = 0;
+    service.record_a.ttl = 0;
 
-    service.record_aaaa = {.name = service.hostname_qualified,
-                          .type = MDNS_RECORDTYPE_AAAA,
-                          .data = {.aaaa = {.addr = service.address_ipv6}},
-                          .rclass = 0,
-                          .ttl = 0};
+    service.record_aaaa.name = service.hostname_qualified;
+    service.record_aaaa.type = MDNS_RECORDTYPE_AAAA;
+    service.record_aaaa.data.aaaa.addr = service.address_ipv6;
+    service.record_aaaa.rclass = 0;
+    service.record_aaaa.ttl = 0;
 
-    service.txt_record[0] = {.name = service.service_instance,
-                            .type = MDNS_RECORDTYPE_TXT,
-                            .data = {.txt = {.key = {MDNS_STRING_CONST("test")},
-                                           .value = {MDNS_STRING_CONST("1")}}},
-                            .rclass = 0,
-                            .ttl = 0};
-    service.txt_record[1] = {.name = service.service_instance,
-                            .type = MDNS_RECORDTYPE_TXT,
-                            .data = {.txt = {.key = {MDNS_STRING_CONST("other")},
-                                           .value = {MDNS_STRING_CONST("value")}}},
-                            .rclass = 0,
-                            .ttl = 0};
+    // Store OS name in buffer
+    strncpy(service.os_name_buffer, os_name.c_str(), sizeof(service.os_name_buffer) - 1);
+    service.os_name_buffer[sizeof(service.os_name_buffer) - 1] = '\0';
+    
+    // Initialize TXT records
+    service.txt_record[0].name = service.service_instance;
+    service.txt_record[0].type = MDNS_RECORDTYPE_TXT;
+    service.txt_record[0].data.txt.key = mdns_string_t{MDNS_STRING_CONST("os")};
+    service.txt_record[0].data.txt.value = mdns_string_t{service.os_name_buffer, strlen(service.os_name_buffer)};
+    service.txt_record[0].rclass = 0;
+    service.txt_record[0].ttl = 0;
+    
+
 
     {
         LOGD("MDNSManager", "Sending announce");
@@ -751,7 +833,6 @@ int MDNSManager::serviceMDNS(const std::string& hostname,
         if (service.address_ipv6.sin6_family == AF_INET6)
             additional[additional_count++] = service.record_aaaa;
         additional[additional_count++] = service.txt_record[0];
-        additional[additional_count++] = service.txt_record[1];
 
         for (int isock = 0; isock < num_sockets; ++isock)
             mdns_announce_multicast(sockets[isock], buffer.get(), capacity, service.record_ptr, 0, 0,
@@ -795,7 +876,6 @@ int MDNSManager::serviceMDNS(const std::string& hostname,
         if (service.address_ipv6.sin6_family == AF_INET6)
             additional[additional_count++] = service.record_aaaa;
         additional[additional_count++] = service.txt_record[0];
-        additional[additional_count++] = service.txt_record[1];
 
         for (int isock = 0; isock < num_sockets; ++isock)
             mdns_goodbye_multicast(sockets[isock], buffer.get(), capacity, service.record_ptr, 0, 0,
@@ -858,11 +938,6 @@ int MDNSManager::queryService(const std::string& service_name,
     return 0;
 }
 
-void MDNSManager::setDeviceCallback(lanshare_device_callback_t callback, void* user_data) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    device_callback_ = callback;
-    device_callback_user_data_ = user_data;
-}
 
 int MDNSManager::startDiscoverer(lanshare_device_callback_t callback, void* user_data) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -909,9 +984,13 @@ void MDNSManager::stopDiscoverer() {
 }
 
 int MDNSManager::startBroadcaster(const lanshare_device_t* device, const char* service_type, int port) {
-    (void)device;
-    std::thread([this,service_type, port]() {
-         serviceMDNS("mc", service_type ? service_type : LANSHARE_MDNS_SERVICE_TYPE, port);
+    // Copy device data to ensure it remains valid when thread runs
+    std::string device_name(device->name);
+    std::string device_os(device->os_name);
+    std::string svc_type(service_type ? service_type : LANSHARE_MDNS_SERVICE_TYPE);
+    
+    std::thread([this, device_name, device_os, svc_type, port]() {
+        serviceMDNS(device_name, svc_type, port, device_os);
     }).detach();
     return 0;
 }
@@ -949,35 +1028,6 @@ const char* MDNSManager::getDiscoveredDevices(char* buffer, size_t buffer_size) 
     return buffer;
 }
 
-int MDNSManager::addDevice(const lanshare_device_t* device) {
-    if (!device) return -1;
-    
-    std::lock_guard<std::mutex> lock(mutex_);
-    
-    if (devices_.size() < MAX_DISCOVERED_DEVICES) {
-        devices_.push_back(*device);
-        return 0;
-    }
-    return -1;
-}
-
-void MDNSManager::clearDevices() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    devices_.clear();
-}
-
-int MDNSManager::getDeviceCount() const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return (int)devices_.size();
-}
-
-const lanshare_device_t* MDNSManager::getDevice(int index) const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (index < 0 || index >= (int)devices_.size()) {
-        return nullptr;
-    }
-    return &devices_[index];
-}
 
 int MDNSManager::processResponses() {
     if (mdns_sock_ < 0) {
@@ -1045,9 +1095,6 @@ void lanshare_mdns_stop_broadcaster(lanshare_mdns_handle_t handle) {
     }
 }
 
-const char* lanshare_mdns_version(void) {
-    return lanshare::mdns::MDNSManager::getVersion();
-}
 
 const char* lanshare_mdns_get_discovered_devices(char* buffer, size_t buffer_size) {
     if (!lanshare::mdns::g_mdns_manager) {
@@ -1056,42 +1103,13 @@ const char* lanshare_mdns_get_discovered_devices(char* buffer, size_t buffer_siz
     return lanshare::mdns::g_mdns_manager->getDiscoveredDevices(buffer, buffer_size);
 }
 
-int lanshare_mdns_add_device(const lanshare_device_t* device) {
-    if (!lanshare::mdns::g_mdns_manager || !device) {
-        return -1;
-    }
-    return lanshare::mdns::g_mdns_manager->addDevice(device);
-}
 
-void lanshare_mdns_clear_devices(void) {
-    if (lanshare::mdns::g_mdns_manager) {
-        lanshare::mdns::g_mdns_manager->clearDevices();
-    }
-}
-
-int lanshare_mdns_get_device_count(void) {
-    if (!lanshare::mdns::g_mdns_manager) {
-        return 0;
-    }
-    return lanshare::mdns::g_mdns_manager->getDeviceCount();
-}
-
-const lanshare_device_t* lanshare_mdns_get_device(int index) {
-    if (!lanshare::mdns::g_mdns_manager) {
-        return nullptr;
-    }
-    return lanshare::mdns::g_mdns_manager->getDevice(index);
-}
 
 int lanshare_mdns_process_responses(void) {
     if (!lanshare::mdns::g_mdns_manager) {
         return -1;
     }
     return lanshare::mdns::g_mdns_manager->processResponses();
-}
-
-const char* lanshare_mdns_get_discovered_devices_impl(char* buffer, size_t buffer_size) {
-    return lanshare_mdns_get_discovered_devices(buffer, buffer_size);
 }
 
 } // extern "C"

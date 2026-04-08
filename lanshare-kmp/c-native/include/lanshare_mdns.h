@@ -65,11 +65,6 @@ void lanshare_mdns_stop_discoverer(lanshare_mdns_handle_t handle);
  */
 void lanshare_mdns_cleanup(lanshare_mdns_handle_t handle);
 
-/**
- * Get mDNS module version
- * @return Version string
- */
-const char* lanshare_mdns_version(void);
 
 /**
  * Get discovered devices as JSON string (Android-specific)
@@ -79,30 +74,7 @@ const char* lanshare_mdns_version(void);
  */
 const char* lanshare_mdns_get_discovered_devices(char* buffer, size_t buffer_size);
 
-/**
- * Add a discovered device (Android-specific, called from Java)
- * @param device Device information
- * @return 0 on success, -1 on error
- */
-int lanshare_mdns_add_device(const lanshare_device_t* device);
 
-/**
- * Clear discovered devices (Android-specific)
- */
-void lanshare_mdns_clear_devices(void);
-
-/**
- * Get number of discovered devices (Android-specific)
- * @return Number of discovered devices
- */
-int lanshare_mdns_get_device_count(void);
-
-/**
- * Get discovered device by index (Android-specific)
- * @param index Device index
- * @return Device info, or NULL if index out of range
- */
-const lanshare_device_t* lanshare_mdns_get_device(int index);
 
 /**
  * Process mDNS responses (Android-specific)
@@ -111,13 +83,7 @@ const lanshare_device_t* lanshare_mdns_get_device(int index);
  */
 int lanshare_mdns_process_responses(void);
 
-/**
- * Get discovered devices as JSON string (internal implementation)
- * @param buffer Output buffer for JSON string
- * @param buffer_size Size of output buffer
- * @return Pointer to buffer, or NULL on error
- */
-const char* lanshare_mdns_get_discovered_devices_impl(char* buffer, size_t buffer_size);
+
 
 #ifdef __cplusplus
 }

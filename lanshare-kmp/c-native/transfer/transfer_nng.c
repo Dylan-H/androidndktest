@@ -1369,8 +1369,3 @@ int lanshare_get_transfer_info(void* handle, int is_upload, lanshare_transfer_in
     
     return 0;
 }
-
-const char* lanshare_transfer_version(void)
-{
-    return "NNG-PAIR-1.0";
-}
