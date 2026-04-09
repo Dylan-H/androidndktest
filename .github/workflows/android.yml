@@ -57,12 +57,12 @@ jobs:
       - name: Build Release APK
         run: |
           chmod +x gradlew
-          #./gradlew assembleRelease --stacktrace
-          ./gradlew assembleRelease --stacktrace --info  # 添加 --info 查看更多细节
+          ./gradlew assembleRelease --stacktrace
+          #./gradlew assembleRelease --stacktrace --info  # 添加 --info 查看更多细节
 
       # 7. 上传 APK
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: lanshare-kmp-release
-          path: lanshare-kmp/app/build/outputs/apk/release/*.apk
+          path: composeApp/build/outputs/apk/release/*.apk  # 修改这里
