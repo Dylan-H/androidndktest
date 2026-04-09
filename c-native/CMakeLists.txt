@@ -3,10 +3,8 @@ cmake_minimum_required(VERSION 3.22.1)
 project(LANShareNative C CXX)
 set(CMAKE_PREFIX_PATH "${PROJECT_SOURCE_DIR}/cmakelib_android/arm64-v8a")
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH)
-# 定义源文件 - 相对于 composeApp/src/androidMain/jni 的路径
-# 从 jni/ 到 c-native/ 的路径: ../../../../../c-native
 set(NATIVE_SOURCE_DIR ${PROJECT_SOURCE_DIR})
-
+message(STATUS "CMAKE_PREFIX_PATH:${CMAKE_PREFIX_PATH}")
 # 启用传输和mDNS
 set(LANSHARE_ENABLE_TRANSFER ON)
 set(LANSHARE_ENABLE_MDNS ON)
@@ -15,6 +13,9 @@ set(LANSHARE_ENABLE_MDNS ON)
 find_package(nng REQUIRED CONFIG)
 if(nng_FOUND)
     message(STATUS "nng found")
+    message(STATUS "  Include dirs: ${NNG_INCLUDE_DIRS}")
+    message(STATUS "  Library target: ${NNG_LIBRARY}")
+
 endif()
 
 # mDNS库 (使用 mjansson/mdns)
