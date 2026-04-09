@@ -9,9 +9,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: lanshare-kmp
+    # defaults:
+    #   run:
+    #     working-directory: lanshare-kmp
 
     steps:
       # 1. 检出代码
