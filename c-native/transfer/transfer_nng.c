@@ -1195,6 +1195,33 @@ transfer_end:
     LOGI("NNG", "Download finished: %llu bytes", bytes_received);
 }
 
+/* Helper function to create and listen on a socket */
+static int server_socket_create_and_listen(nng_socket* socket, const char* url) {
+    nng_err rv;
+    
+    /* Create NNG PAIR socket - NNG 2.0 uses nng_pair0_open */
+    rv = nng_pair0_open(socket);
+    if (rv != NNG_OK) {
+        LOGE("NNG", "nng_pair0_open: %s", nng_strerror(rv));
+        return -1;
+    }
+    
+    /* Set timeouts - NNG 2.0 uses nng_socket_set_ms */
+    /* Use longer timeout for file transfers (5 minutes) */
+    nng_socket_set_ms(*socket, NNG_OPT_SENDTIMEO, 300000);
+    nng_socket_set_ms(*socket, NNG_OPT_RECVTIMEO, 300000);
+    
+    /* Listen on the specified URL */
+    rv = nng_listen(*socket, url, NULL, 0);
+    if (rv != NNG_OK) {
+        LOGE("NNG", "nng_listen: %s", nng_strerror(rv));
+        nng_socket_close(*socket);
+        return -1;
+    }
+    
+    return 0;
+}
+
 int lanshare_download_server_start(int port,
                                     const char* save_dir,
                                     lanshare_transfer_callback_t callback,
@@ -1212,28 +1239,15 @@ int lanshare_download_server_start(int port,
         return -1;
     }
     
-    /* Create NNG PAIR socket - NNG 2.0 uses nng_pair0_open */
-    rv = nng_pair0_open(&g_server_socket);
-    if (rv != NNG_OK) {
-        LOGE("NNG", "nng_pair0_open: %s", nng_strerror(rv));
-        return -1;
-    }
-    g_server_socket_valid = 1;
-    
-    /* Set timeouts - NNG 2.0 uses nng_socket_set_ms */
-    nng_socket_set_ms(g_server_socket, NNG_OPT_SENDTIMEO, 30000);
-    nng_socket_set_ms(g_server_socket, NNG_OPT_RECVTIMEO, 30000);
-    
-    /* Listen on all interfaces */
+    /* Build URL */
     char url[128];
     snprintf(url, sizeof(url), "tcp://0.0.0.0:%d", port);
     
-    rv = nng_listen(g_server_socket, url, NULL, 0);
-    if (rv != NNG_OK) {
-        LOGE("NNG", "nng_listen: %s", nng_strerror(rv));
-        nng_socket_close(g_server_socket);
+    /* Create and listen on socket (only once) */
+    if (server_socket_create_and_listen(&g_server_socket, url) != 0) {
         return -1;
     }
+    g_server_socket_valid = 1;
     
     g_server_port = port;
     if (save_dir) {
@@ -1248,32 +1262,16 @@ int lanshare_download_server_start(int port,
     /* Note: In a real implementation, this should run in a separate thread */
     while (g_server_port != 0) {
         handle_connection(g_server_socket);
-        LOGI("NNG", "Connection closed, restarting server socket...");
+        LOGI("NNG", "Connection closed, waiting for next connection...");
         
-        /* Close the old socket */
+        /* Socket remains open, just wait for next connection */
+        /* Only rebuild socket on error */
+    }
+    
+    /* Cleanup when server stops */
+    if (g_server_socket_valid) {
         nng_socket_close(g_server_socket);
         g_server_socket_valid = 0;
-        
-        /* Create new socket for next connection */
-        rv = nng_pair0_open(&g_server_socket);
-        if (rv != NNG_OK) {
-            LOGE("NNG", "nng_pair0_open (restart): %s", nng_strerror(rv));
-            break;
-        }
-        g_server_socket_valid = 1;
-        
-        /* Set timeouts */
-        nng_socket_set_ms(g_server_socket, NNG_OPT_SENDTIMEO, 30000);
-        nng_socket_set_ms(g_server_socket, NNG_OPT_RECVTIMEO, 30000);
-        
-        /* Listen again */
-        rv = nng_listen(g_server_socket, url, NULL, 0);
-        if (rv != NNG_OK) {
-            LOGE("NNG", "nng_listen (restart): %s", nng_strerror(rv));
-            break;
-        }
-        
-        LOGI("NNG", "Server socket restarted, waiting for new connection...");
     }
     
     return 0;
