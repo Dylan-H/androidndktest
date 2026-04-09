@@ -549,59 +549,59 @@ JNIEXPORT jstring JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_getPendingTra
     return (*env)->NewStringUTF(env, "{}");
 }
 
-/* JNI function: downloadCreate */
-JNIEXPORT jlong JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_downloadCreate
-  (JNIEnv* env, jclass clazz, jstring peerIp, jint port, jstring filePath, jstring saveDir)
-{
-    const char* c_peer_ip = jstring_to_cstring(env, peerIp);
-    const char* c_file_path = jstring_to_cstring(env, filePath);
-    const char* c_save_dir = jstring_to_cstring(env, saveDir);
-    
-    lanshare_download_handle_t handle = lanshare_download_create(
-        c_peer_ip, port, c_file_path);
-    
-    (*env)->ReleaseStringUTFChars(env, peerIp, c_peer_ip);
-    (*env)->ReleaseStringUTFChars(env, filePath, c_file_path);
-    (*env)->ReleaseStringUTFChars(env, saveDir, c_save_dir);
-    
-    return (jlong)(intptr_t)handle;
-}
-
-/* JNI function: downloadStart */
-JNIEXPORT jint JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_downloadStart
-  (JNIEnv* env, jclass clazz, jlong handle)
-{
-    return lanshare_download_start((lanshare_download_handle_t)(intptr_t)handle);
-}
-
-/* JNI function: downloadPause */
-JNIEXPORT jint JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_downloadPause
-  (JNIEnv* env, jclass clazz, jlong handle)
-{
-    return lanshare_download_pause((lanshare_download_handle_t)(intptr_t)handle);
-}
-
-/* JNI function: downloadResume */
-JNIEXPORT jint JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_downloadResume
-  (JNIEnv* env, jclass clazz, jlong handle)
-{
-    return lanshare_download_resume((lanshare_download_handle_t)(intptr_t)handle);
-}
-
-/* JNI function: downloadCancel */
-JNIEXPORT jboolean JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_downloadCancel
-  (JNIEnv* env, jclass clazz, jlong handle)
-{
-    int result = lanshare_download_cancel((lanshare_download_handle_t)(intptr_t)handle);
-    return (result == 0) ? JNI_TRUE : JNI_FALSE;
-}
-
-/* JNI function: downloadDestroy */
-JNIEXPORT void JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_downloadDestroy
-  (JNIEnv* env, jclass clazz, jlong handle)
-{
-    lanshare_download_destroy((lanshare_download_handle_t)(intptr_t)handle);
-}
+///* JNI function: downloadCreate */
+//JNIEXPORT jlong JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_downloadCreate
+//  (JNIEnv* env, jclass clazz, jstring peerIp, jint port, jstring filePath, jstring saveDir)
+//{
+//    const char* c_peer_ip = jstring_to_cstring(env, peerIp);
+//    const char* c_file_path = jstring_to_cstring(env, filePath);
+//    const char* c_save_dir = jstring_to_cstring(env, saveDir);
+//
+//    lanshare_download_handle_t handle = lanshare_download_create(
+//        c_peer_ip, port, c_file_path);
+//
+//    (*env)->ReleaseStringUTFChars(env, peerIp, c_peer_ip);
+//    (*env)->ReleaseStringUTFChars(env, filePath, c_file_path);
+//    (*env)->ReleaseStringUTFChars(env, saveDir, c_save_dir);
+//
+//    return (jlong)(intptr_t)handle;
+//}
+//
+///* JNI function: downloadStart */
+//JNIEXPORT jint JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_downloadStart
+//  (JNIEnv* env, jclass clazz, jlong handle)
+//{
+//    return lanshare_download_start((lanshare_download_handle_t)(intptr_t)handle);
+//}
+//
+///* JNI function: downloadPause */
+//JNIEXPORT jint JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_downloadPause
+//  (JNIEnv* env, jclass clazz, jlong handle)
+//{
+//    return lanshare_download_pause((lanshare_download_handle_t)(intptr_t)handle);
+//}
+//
+///* JNI function: downloadResume */
+//JNIEXPORT jint JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_downloadResume
+//  (JNIEnv* env, jclass clazz, jlong handle)
+//{
+//    return lanshare_download_resume((lanshare_download_handle_t)(intptr_t)handle);
+//}
+//
+///* JNI function: downloadCancel */
+//JNIEXPORT jboolean JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_downloadCancel
+//  (JNIEnv* env, jclass clazz, jlong handle)
+//{
+//    int result = lanshare_download_cancel((lanshare_download_handle_t)(intptr_t)handle);
+//    return (result == 0) ? JNI_TRUE : JNI_FALSE;
+//}
+//
+///* JNI function: downloadDestroy */
+//JNIEXPORT void JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_downloadDestroy
+//  (JNIEnv* env, jclass clazz, jlong handle)
+//{
+//    lanshare_download_destroy((lanshare_download_handle_t)(intptr_t)handle);
+//}
 
 /* JNI function: downloadGetStatus */
 JNIEXPORT jint JNICALL Java_com_lnan_lanshare_ndk_NativeLibrary_downloadGetStatus

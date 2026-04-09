@@ -201,41 +201,41 @@ expect fun getPendingTransfer(): String
  * @param handle Download handle
  * @return 0 on success
  */
-expect fun downloadStart(handle: Long): Int
-
-/**
- * Pause download
- * @param handle Download handle
- * @return 0 on success
- */
-expect fun downloadPause(handle: Long): Int
-
-/**
- * Resume download
- * @param handle Download handle
- * @return 0 on success
- */
-expect fun downloadResume(handle: Long): Int
-
-/**
- * Cancel download
- * @param handle Download handle
- * @return true if cancelled successfully
- */
-expect fun downloadCancel(handle: Long): Boolean
-
-/**
- * Destroy download handle
- * @param handle Download handle
- */
-expect fun downloadDestroy(handle: Long)
-
-/**
- * Get download status
- * @param handle Download handle
- * @return Status code
- */
-expect fun downloadGetStatus(handle: Long): Int
+//expect fun downloadStart(handle: Long): Int
+//
+///**
+// * Pause download
+// * @param handle Download handle
+// * @return 0 on success
+// */
+//expect fun downloadPause(handle: Long): Int
+//
+///**
+// * Resume download
+// * @param handle Download handle
+// * @return 0 on success
+// */
+//expect fun downloadResume(handle: Long): Int
+//
+///**
+// * Cancel download
+// * @param handle Download handle
+// * @return true if cancelled successfully
+// */
+//expect fun downloadCancel(handle: Long): Boolean
+//
+///**
+// * Destroy download handle
+// * @param handle Download handle
+// */
+//expect fun downloadDestroy(handle: Long)
+//
+///**
+// * Get download status
+// * @param handle Download handle
+// * @return Status code
+// */
+//expect fun downloadGetStatus(handle: Long): Int
 
 /**
  * Get current transfer information
