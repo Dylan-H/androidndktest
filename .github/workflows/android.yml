@@ -49,7 +49,7 @@ jobs:
       - name: Install required NDK and CMake
         run: |
           # 安装 NDK (修改版本号为你需要的)
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;21.4.7075529"
+          #yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;21.4.7075529"
           # 安装 CMake (修改版本号为你需要的)
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "cmake;3.22.1"
 
@@ -57,7 +57,8 @@ jobs:
       - name: Build Release APK
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --stacktrace
+          #./gradlew assembleRelease --stacktrace
+          ./gradlew assembleRelease --stacktrace --info  # 添加 --info 查看更多细节
 
       # 7. 上传 APK
       - name: Upload APK Artifact
